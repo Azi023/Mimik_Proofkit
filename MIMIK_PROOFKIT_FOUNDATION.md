@@ -169,6 +169,191 @@ While Node.js has native Playwright and would be better for a SaaS dashboard, th
 - Third-party scripts
 ```
 
+### 4.1.1 Business Logic Analyzer
+
+**Purpose:** Understand the website's purpose and verify features work as intended
+
+Before running technical checks, ProofKit must first understand:
+- What type of business is this? (real estate, e-commerce, SaaS, hospitality, etc.)
+- What is the primary conversion goal? (inquiries, bookings, purchases, signups)
+- What features should exist based on business type?
+- Are those features actually working?
+
+#### Business Type Detection
+```python
+# Auto-detect business type from signals:
+BUSINESS_SIGNALS = {
+    "real_estate": ["property", "apartment", "villa", "bedroom", "sqft", "price", "location", "floor plan"],
+    "ecommerce": ["add to cart", "buy now", "checkout", "product", "shop", "price", "$", "shipping"],
+    "saas": ["pricing", "free trial", "sign up", "demo", "features", "integrations", "api"],
+    "hospitality": ["book now", "reservation", "check-in", "rooms", "amenities", "guests"],
+    "restaurant": ["menu", "order", "delivery", "reservation", "table", "cuisine"],
+    "healthcare": ["appointment", "doctor", "patient", "clinic", "services", "insurance"],
+    "agency": ["portfolio", "services", "case study", "clients", "contact us", "about us"],
+}
+```
+
+#### Expected Features by Business Type
+
+| Business Type | Must-Have Features | Should-Have Features |
+|---------------|-------------------|---------------------|
+| **Real Estate** | Property listings, Inquiry form, Location/map, Price display, Image gallery | Virtual tour, WhatsApp, Floor plans, Payment calculator, Compare units |
+| **E-commerce** | Product catalog, Add to cart, Checkout, Search, Price | Filters, Reviews, Wishlist, Stock status, Related products |
+| **SaaS** | Pricing page, Sign up/Trial, Feature list, Demo request | Testimonials, Integrations page, Comparison table, FAQ |
+| **Hospitality** | Room listings, Booking form, Availability calendar, Amenities | Reviews, Virtual tour, Location map, Special offers |
+| **Restaurant** | Menu, Contact/Location, Hours, Reservation/Order | Online ordering, Delivery tracking, Reviews, Gallery |
+| **Agency** | Services, Portfolio, Contact form, About | Case studies, Team page, Testimonials, Blog |
+
+#### Feature Verification Tests
+```python
+# For each expected feature, verify:
+class FeatureCheck:
+    feature_name: str           # "Inquiry Form"
+    expected: bool              # Should this exist based on business type?
+    found: bool                 # Was it detected in DOM?
+    functional: bool            # Does it actually work? (click/interaction test)
+    location: str               # Where on site (homepage, dedicated page, footer)
+    accessibility: str          # "above_fold" | "below_fold" | "buried" | "missing"
+    evidence: Evidence          # Screenshot, selector, URL
+```
+
+#### Business Logic Findings Examples
+```python
+# Finding: Critical feature missing
+Finding(
+    id="BIZ-FEAT-001",
+    category="CONVERSION",
+    severity="P0",
+    title="Property inquiry form not found",
+    summary="As a real estate website, no property inquiry form was detected on listing pages",
+    impact="Visitors cannot express interest in properties - complete conversion blocker",
+    recommendation="Add inquiry form to every property page, ideally sticky or above fold",
+)
+
+# Finding: Feature exists but broken
+Finding(
+    id="BIZ-FEAT-002",
+    category="CONVERSION",
+    severity="P0",
+    title="Booking form submission fails",
+    summary="The booking form exists but returns error on submission attempt",
+    impact="Users cannot complete bookings - 100% conversion loss on this flow",
+    recommendation="Debug form handler, check API endpoint, verify email delivery",
+)
+
+# Finding: Feature exists but poorly placed
+Finding(
+    id="BIZ-FEAT-003",
+    category="UX",
+    severity="P1",
+    title="Contact form buried in footer only",
+    summary="Primary contact method requires scrolling to page bottom",
+    impact="High-intent visitors may leave before discovering how to inquire",
+    recommendation="Add sticky CTA or contact option in header/above fold",
+)
+```
+
+#### CLI Input for Business Context
+```bash
+# User provides business context for better analysis
+proofkit run --url https://example.com \
+    --business-type "real_estate" \
+    --conversion-goal "property inquiries" \
+    --expected-features "inquiry form, whatsapp, virtual tour, price display"
+
+# Or auto-detect mode
+proofkit run --url https://example.com --auto-detect
+```
+
+#### Business Logic in AI Narration Prompt
+```
+You are analyzing a {business_type} website.
+
+Primary conversion goal: {conversion_goal}
+
+Expected features for this business type:
+{expected_features_list}
+
+Feature verification results:
+{feature_check_results}
+
+Based on business logic analysis, highlight:
+1. Critical missing features that block conversions
+2. Features that exist but don't work properly
+3. Features that are poorly positioned/accessible
+4. Opportunities based on competitor standards in this industry
+```
+
+### 4.1.2 Feature Verification Flow
+
+For each detected/expected feature, ProofKit runs a verification sequence:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FEATURE VERIFICATION FLOW                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. DETECT                                                      │
+│     └─▶ Does the feature exist in DOM?                         │
+│         └─▶ Yes: Continue to Step 2                            │
+│         └─▶ No: Log as "Missing Feature" (P0/P1)               │
+│                                                                 │
+│  2. VISIBILITY                                                  │
+│     └─▶ Is it visible without scrolling?                       │
+│     └─▶ Is it on mobile viewport?                              │
+│     └─▶ Is it obscured by other elements?                      │
+│         └─▶ Issues: Log as "Poorly Positioned" (P1/P2)         │
+│                                                                 │
+│  3. INTERACTIVITY                                               │
+│     └─▶ Can it be clicked/focused?                             │
+│     └─▶ Does hover state exist?                                │
+│     └─▶ Is it keyboard accessible?                             │
+│         └─▶ Issues: Log as "Interaction Problem" (P1/P2)       │
+│                                                                 │
+│  4. FUNCTIONALITY (for key features only)                       │
+│     └─▶ Click/interact with element                            │
+│     └─▶ Did expected outcome occur?                            │
+│         - Form: Fields appear, validation works                │
+│         - Link: Correct page opens                             │
+│         - Button: Modal/action triggers                        │
+│         - WhatsApp: wa.me link format correct                  │
+│         └─▶ Issues: Log as "Broken Feature" (P0)               │
+│                                                                 │
+│  5. EVIDENCE                                                    │
+│     └─▶ Screenshot the feature                                 │
+│     └─▶ Record selector path                                   │
+│     └─▶ Note any console errors during interaction             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Features That Get Full Verification (Click Test)
+
+Only test critical conversion features to avoid:
+- Accidentally submitting forms
+- Triggering rate limits
+- Breaking session state
+```python
+FULL_VERIFICATION_FEATURES = [
+    "primary_cta_button",      # Main call-to-action
+    "whatsapp_link",           # Verify wa.me format
+    "phone_link",              # Verify tel: format
+    "email_link",              # Verify mailto: format
+    "navigation_menu",         # Verify dropdown/hamburger works
+    "search_function",         # Verify search opens/works
+    "gallery_lightbox",        # Verify images open
+    "video_player",            # Verify video loads
+    "map_embed",               # Verify map is interactive
+    "chat_widget",             # Verify chat opens
+]
+
+# DO NOT click-test:
+- Form submit buttons (risk of spam)
+- Payment buttons (risk of charges)
+- Delete/destructive actions
+- External links (track but don't follow)
+```
+
+
 ### 4.2 Analyzer Layer
 
 **Purpose:** Convert raw data into structured findings using deterministic rules
@@ -187,6 +372,20 @@ class Finding:
     evidence: List[Evidence]
     tags: List[str]
 ```
+
+#### Finding Categories (Updated)
+
+| Category | What It Covers | Example Findings |
+|----------|---------------|------------------|
+| **CONVERSION** | CTAs, forms, contact methods, lead capture | Missing WhatsApp, form too long, no sticky CTA |
+| **PERFORMANCE** | Speed, Core Web Vitals, loading | LCP > 4s, render-blocking JS, large images |
+| **SEO** | Technical SEO, meta tags, structure | Missing H1, duplicate titles, no sitemap |
+| **UX** | Design, navigation, mobile experience | Poor mobile layout, confusing nav, broken links |
+| **SECURITY** | SSL, headers, vulnerabilities | Missing HTTPS, weak headers, exposed errors |
+| **MAINTENANCE** | Code health, dependencies, monitoring | Outdated libraries, no analytics, broken pages |
+| **BUSINESS_LOGIC** | Feature completeness, functionality | Missing expected feature, broken booking flow |
+| **ACCESSIBILITY** | WCAG compliance, inclusive design | Missing alt text, poor contrast, no focus states |
+| **CONTENT** | Quality, depth, relevance | Thin content, missing FAQ, no testimonials |
 
 #### Rule Categories
 
@@ -759,6 +958,8 @@ Font: Playfair Display for headings, Inter for body"
 
 ---
 
+
+
 ## 18. Next Steps
 
 ### Immediate (This Week)
@@ -843,3 +1044,119 @@ curl -I https://example.com -H "User-Agent: Mozilla/5.0"
 **Document Version:** 1.0  
 **Created:** January 2026  
 **Ready for:** Development Phase
+
+
+### Phase 3 Detailed: Advanced Features (Month 2)
+
+#### 3.1 Multi-Page Intelligent Crawl
+- Crawl up to 50 pages following internal links
+- Prioritize high-value pages: homepage, pricing, contact, product/service pages
+- Detect and map site structure automatically
+- Identify orphan pages (no internal links pointing to them)
+
+#### 3.2 Competitor Analysis Module
+```bash
+proofkit run --url https://client.com --competitors "https://competitor1.com,https://competitor2.com"
+```
+- Compare performance scores side-by-side
+- Feature gap analysis (competitor has X, client doesn't)
+- Content depth comparison
+- CTA strategy comparison
+- Generate "Competitor Benchmark Report" section
+
+#### 3.3 Historical Tracking
+- Store audit results in SQLite database
+- Track improvements over time
+- Generate "Progress Report" showing before/after
+- Alert when metrics regress
+
+#### 3.4 Industry Templates
+Pre-configured audit profiles for:
+- Luxury Real Estate (Dubai market focus)
+- E-commerce
+- SaaS / Tech Startups
+- Hospitality & Hotels
+- Restaurants & F&B
+- Professional Services / Agencies
+- Healthcare / Clinics
+
+Each template includes:
+- Industry-specific expected features
+- Benchmark scores for the industry
+- Tailored recommendations
+- Industry-specific Lovable prompt templates
+
+#### 3.5 Advanced Form Analysis
+- Detect all forms on site
+- Count fields and categorize (required vs optional)
+- Identify friction points (too many fields, confusing labels)
+- Check for validation feedback
+- Test submission flow (without actually submitting)
+- Verify thank-you page / confirmation exists
+
+#### 3.6 Accessibility Audit (WCAG)
+- Color contrast checking
+- Alt text presence on images
+- Keyboard navigation testing
+- Screen reader compatibility signals
+- ARIA labels verification
+- Focus states on interactive elements
+
+#### 3.7 Content Quality Scoring
+- Readability score (Flesch-Kincaid)
+- Content length appropriateness per page type
+- Keyword density (without stuffing)
+- Duplicate content detection across pages
+- Missing content opportunities (FAQ, testimonials, etc.)
+
+#### 3.8 Third-Party Integration Audit
+Detect and verify:
+- Analytics (GA4, GTM, Meta Pixel, etc.)
+- Chat widgets (Intercom, Drift, Tawk.to, WhatsApp)
+- CRM integrations (HubSpot forms, Salesforce)
+- Payment processors (Stripe, PayPal buttons)
+- Review widgets (Trustpilot, Google Reviews)
+- Map embeds (Google Maps, Mapbox)
+- Video embeds (YouTube, Vimeo, Wistia)
+
+#### 3.9 PDF Report Generation
+- Professional PDF export matching Figma template style
+- Include all screenshots and evidence
+- Executive summary on first page
+- Branded with Mimik Creations logo
+- Shareable link option (upload to cloud storage)
+
+#### 3.10 Scheduled Audits
+- Set up recurring audits (weekly/monthly)
+- Email notifications when audit completes
+- Alert on significant score changes
+- Ideal for retainer clients like Seven Tides
+
+#### 3.11 White-Label Configuration
+```yaml
+# config/whitelabel.yml
+brand_name: "Partner Agency Name"
+logo_url: "https://..."
+primary_color: "#1a1a1a"
+contact_email: "audits@partneragency.com"
+footer_text: "Powered by Mimik Creations"
+```
+
+#### 3.12 API Endpoint (for integrations)
+```bash
+# REST API for programmatic access
+POST /api/v1/audit
+{
+  "url": "https://example.com",
+  "business_type": "real_estate",
+  "mode": "full",
+  "webhook_url": "https://your-app.com/audit-complete"
+}
+
+# Response
+{
+  "audit_id": "aud_abc123",
+  "status": "processing",
+  "estimated_time": "180 seconds"
+}
+```

@@ -32,5 +32,22 @@ Thumbs.db
 # Node (if any)
 node_modules/
 
+# Next.js
+.next/
+out/
+
 # Logs
 *.log
+
+# Windows Zone.Identifier files
+*:Zone.Identifier
+
+# Large binaries
+*.AppImage
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/

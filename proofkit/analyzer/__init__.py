@@ -1,0 +1,132 @@
+"""Analyzer module for ProofKit - rule-based analysis of collected data."""
+
+from typing import List, Dict, Optional
+
+from proofkit.schemas.finding import Finding
+from proofkit.schemas.business import BusinessType
+from proofkit.collector.models import RawData
+from proofkit.utils.logger import logger
+
+from .engine import RuleEngine
+from .scoring import ScoreCalculator
+
+
+class Analyzer:
+    """
+    Main analyzer class that processes raw data and produces findings.
+
+    This is the primary interface for the analyzer module, used by the
+    core runner to analyze collected data.
+    """
+
+    def __init__(self):
+        self.engine = RuleEngine()
+        self.scorer = ScoreCalculator()
+
+    def analyze(
+        self,
+        raw_data: RawData,
+        business_type: Optional[BusinessType] = None,
+        auto_detect: bool = True,
+    ) -> List[Finding]:
+        """
+        Analyze raw data and return findings.
+
+        Args:
+            raw_data: Raw data from collectors
+            business_type: Optional business type for context-aware rules
+            auto_detect: Whether to use auto-detected business type
+
+        Returns:
+            List of Finding objects sorted by severity
+        """
+        logger.info(f"Starting analysis for {raw_data.url}")
+
+        findings, scores = self.engine.analyze(
+            raw_data=raw_data,
+            business_type=business_type,
+            auto_detect=auto_detect,
+        )
+
+        logger.info(f"Analysis complete: {len(findings)} findings")
+
+        return findings
+
+    def analyze_with_scores(
+        self,
+        raw_data: RawData,
+        business_type: Optional[BusinessType] = None,
+        auto_detect: bool = True,
+    ) -> tuple[List[Finding], Dict[str, int]]:
+        """
+        Analyze raw data and return findings with scores.
+
+        Args:
+            raw_data: Raw data from collectors
+            business_type: Optional business type for context-aware rules
+            auto_detect: Whether to use auto-detected business type
+
+        Returns:
+            Tuple of (findings list, scores dict)
+        """
+        return self.engine.analyze(
+            raw_data=raw_data,
+            business_type=business_type,
+            auto_detect=auto_detect,
+        )
+
+    def get_scores(self, findings: List[Finding]) -> Dict[str, int]:
+        """
+        Calculate scores from findings.
+
+        Args:
+            findings: List of findings
+
+        Returns:
+            Dict mapping category to score (0-100)
+        """
+        return self.scorer.calculate(findings)
+
+    def get_summary(self, findings: List[Finding]) -> Dict[str, any]:
+        """
+        Get summary statistics from findings.
+
+        Args:
+            findings: List of findings
+
+        Returns:
+            Dict with counts by severity and category
+        """
+        return self.scorer.get_summary(findings)
+
+    def get_quick_wins(self, findings: List[Finding]) -> List[Finding]:
+        """
+        Get high-impact, low-effort findings.
+
+        Args:
+            findings: List of findings
+
+        Returns:
+            Filtered list of quick wins
+        """
+        return self.engine.get_quick_wins(findings)
+
+    def get_critical_findings(self, findings: List[Finding]) -> List[Finding]:
+        """
+        Get all critical (P0) findings.
+
+        Args:
+            findings: List of findings
+
+        Returns:
+            Filtered list of critical findings
+        """
+        return self.engine.get_critical_findings(findings)
+
+
+# Export main classes
+__all__ = [
+    "Analyzer",
+    "RuleEngine",
+    "ScoreCalculator",
+]
