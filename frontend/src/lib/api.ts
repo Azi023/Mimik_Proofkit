@@ -10,7 +10,7 @@ const api = axios.create({
   },
 });
 
-// Add API key to requests
+// Add API key to requests (send both headers for compatibility)
 api.interceptors.request.use((config) => {
   const apiKey = typeof window !== 'undefined'
     ? localStorage.getItem('proofkit_api_key')
@@ -18,6 +18,7 @@ api.interceptors.request.use((config) => {
 
   if (apiKey) {
     config.headers.Authorization = `Bearer ${apiKey}`;
+    config.headers['X-API-Key'] = apiKey;
   }
 
   return config;

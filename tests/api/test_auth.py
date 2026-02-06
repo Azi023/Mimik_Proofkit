@@ -50,3 +50,13 @@ class TestAuthentication:
         )
 
         assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_x_api_key_header(self, client: AsyncClient, test_user):
+        """Test request with valid API key in X-API-Key header."""
+        response = await client.get(
+            "/v1/audits",
+            headers={"X-API-Key": test_user.api_key},
+        )
+
+        assert response.status_code == 200

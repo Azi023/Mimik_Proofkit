@@ -1,6 +1,6 @@
 """API key authentication."""
 
-from fastapi import HTTPException, Security, Depends
+from fastapi import HTTPException, Security, Request
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from typing import Optional
 import secrets
@@ -8,11 +8,16 @@ import secrets
 from proofkit.utils.logger import logger
 
 
-# API key can be provided in header or query parameter
+# API key can be provided in multiple ways
 api_key_header = APIKeyHeader(
     name="Authorization",
     auto_error=False,
     description="API key in format: Bearer pk_live_xxxxx",
+)
+api_key_header_alt = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="API key directly in X-API-Key header",
 )
 api_key_query = APIKeyQuery(
     name="api_key",
@@ -21,28 +26,48 @@ api_key_query = APIKeyQuery(
 )
 
 
-async def verify_api_key(
-    header_key: Optional[str] = Security(api_key_header),
+async def get_api_key(
+    auth_header: Optional[str] = Security(api_key_header),
+    x_api_key: Optional[str] = Security(api_key_header_alt),
     query_key: Optional[str] = Security(api_key_query),
+) -> str:
+    """
+    Extract API key from various sources.
+
+    Checks in order:
+    1. Authorization header (Bearer token)
+    2. X-API-Key header
+    3. api_key query parameter
+    """
+    # Try Authorization header (Bearer token)
+    if auth_header:
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]
+        return auth_header
+
+    # Try X-API-Key header
+    if x_api_key:
+        return x_api_key
+
+    # Try query parameter
+    if query_key:
+        return query_key
+
+    raise HTTPException(
+        status_code=401,
+        detail="Missing API key. Provide via Authorization header (Bearer token), X-API-Key header, or api_key query parameter.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def verify_api_key(
+    api_key: str = Security(get_api_key),
 ):
     """
-    Verify API key from Authorization header or query parameter.
+    Verify API key and return user.
 
     Raises HTTPException 401 if key is missing or invalid.
     """
-    api_key = header_key or query_key
-
-    if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing API key. Provide via Authorization header or api_key query param.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Remove "Bearer " prefix if present
-    if api_key.startswith("Bearer "):
-        api_key = api_key[7:]
-
     # Import here to avoid circular imports
     from ..database.crud import get_user_by_api_key
 
@@ -60,15 +85,14 @@ async def verify_api_key(
 
 
 async def get_current_user(
-    header_key: Optional[str] = Security(api_key_header),
-    query_key: Optional[str] = Security(api_key_query),
+    api_key: str = Security(get_api_key),
 ):
     """
     Get current user from API key.
 
     This is an alias for verify_api_key that returns the user.
     """
-    return await verify_api_key(header_key, query_key)
+    return await verify_api_key(api_key)
 
 
 def generate_api_key(prefix: str = "pk_live") -> str:

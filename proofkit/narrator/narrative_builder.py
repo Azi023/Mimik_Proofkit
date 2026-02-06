@@ -48,7 +48,8 @@ class NarrativeBuilder:
 
         business_context = "General business website"
         if business_type:
-            business_context = business_type.value.replace("_", " ").title()
+            bt_value = business_type.value if hasattr(business_type, 'value') else str(business_type)
+            business_context = bt_value.replace("_", " ").title()
 
         user_prompt = f"""
 Business Type: {business_context}
@@ -138,7 +139,8 @@ Example:
 
         industry_context = ""
         if business_type:
-            industry_context = f"Industry: {business_type.value.replace('_', ' ').title()}. Consider industry-specific best practices."
+            bt_value = business_type.value if hasattr(business_type, 'value') else str(business_type)
+            industry_context = f"Industry: {bt_value.replace('_', ' ').title()}. Consider industry-specific best practices."
 
         user_prompt = f"""
 {industry_context}

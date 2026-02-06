@@ -49,11 +49,11 @@ class BusinessLogicRules(BaseRule):
                     id=f"BIZ-MUST-{self._feature_id(feature)}",
                     severity=Severity.P0,
                     title=f"Critical feature missing: {self._feature_display_name(feature)}",
-                    summary=f"As a {self.business_type.value} website, '{self._feature_display_name(feature)}' is expected but not detected",
-                    impact=f"This feature is essential for {self.business_type.value} websites. Missing it may cause complete conversion failure.",
+                    summary=f"As a {self._get_business_type_value()} website, '{self._feature_display_name(feature)}' is expected but not detected",
+                    impact=f"This feature is essential for {self._get_business_type_value()} websites. Missing it may cause complete conversion failure.",
                     recommendation=self._get_feature_recommendation(feature),
                     effort=Effort.M,
-                    tags=["business-critical", self.business_type.value],
+                    tags=["business-critical", self._get_business_type_value()],
                 )
             elif status == FeatureStatus.BROKEN:
                 self.add_finding(
@@ -88,12 +88,12 @@ class BusinessLogicRules(BaseRule):
                     id=f"BIZ-SHOULD-{self._feature_id(feature)}",
                     severity=Severity.P2,
                     title=f"Recommended feature missing: {self._feature_display_name(feature)}",
-                    summary=f"'{self._feature_display_name(feature)}' is common for {self.business_type.value} websites but not detected",
+                    summary=f"'{self._feature_display_name(feature)}' is common for {self._get_business_type_value()} websites but not detected",
                     impact=f"Competitors likely have this feature. Missing it may put you at disadvantage.",
                     recommendation=self._get_feature_recommendation(feature),
                     effort=Effort.M,
                     confidence=0.7,
-                    tags=["enhancement", self.business_type.value],
+                    tags=["enhancement", self._get_business_type_value()],
                 )
 
     def _detect_feature(self, feature: str) -> FeatureStatus:
@@ -300,6 +300,12 @@ class BusinessLogicRules(BaseRule):
                 if "testimonial" in h.lower() or "review" in h.lower() or "client" in h.lower():
                     return FeatureStatus.FOUND
         return FeatureStatus.MISSING
+
+    def _get_business_type_value(self) -> str:
+        """Get business type as string, handling both enum and string values."""
+        if hasattr(self.business_type, 'value'):
+            return self.business_type.value
+        return str(self.business_type)
 
     def _feature_id(self, feature: str) -> str:
         """Create short ID from feature name."""

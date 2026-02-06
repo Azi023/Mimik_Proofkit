@@ -97,7 +97,7 @@ class TestConfigPaths:
         settings = ProofKitSettings()
 
         assert isinstance(settings.output_dir, Path)
-        assert str(settings.output_dir) == "custom/runs"
+        assert settings.output_dir == Path("custom/runs")
 
     def test_templates_dir_path_type(self, monkeypatch):
         """Test that templates_dir is a Path object."""

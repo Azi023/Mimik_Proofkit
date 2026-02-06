@@ -338,12 +338,12 @@ Style: Clean, professional, with a subtle call-to-action feel
 
         # Full report prompt
         full_prompt = self.generate_full_report_prompt()
-        (output_dir / "pencil_full_report.txt").write_text(full_prompt)
+        (output_dir / "pencil_full_report.txt").write_text(full_prompt, encoding='utf-8')
 
         # Section prompts
         section_prompts = self.generate_section_prompts()
         for section, prompt in section_prompts.items():
-            (output_dir / f"pencil_{section}.txt").write_text(prompt)
+            (output_dir / f"pencil_{section}.txt").write_text(prompt, encoding='utf-8')
 
         # Summary JSON
         summary = {
@@ -353,7 +353,7 @@ Style: Clean, professional, with a subtle call-to-action feel
             "finding_count": len(self.report.findings),
             "sections_generated": list(section_prompts.keys()),
         }
-        (output_dir / "pencil_summary.json").write_text(json.dumps(summary, indent=2))
+        (output_dir / "pencil_summary.json").write_text(json.dumps(summary, indent=2), encoding='utf-8')
 
         return {
             "full_prompt_path": str(output_dir / "pencil_full_report.txt"),

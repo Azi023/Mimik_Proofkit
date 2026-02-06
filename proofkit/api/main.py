@@ -44,13 +44,15 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    # CORS middleware
+    # CORS middleware - Allow all origins for development
+    # Note: In production, restrict to specific origins
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure for production
-        allow_credentials=True,
-        allow_methods=["*"],
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
 
     # Health check routes (no auth required)

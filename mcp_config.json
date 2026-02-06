@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "proofkit": {
+      "command": "python",
+      "args": ["-m", "proofkit.mcp.server"],
+      "cwd": "/home/atheeque/workspace/Mimik_Proofkit",
+      "env": {
+        "PYTHONPATH": "/home/atheeque/workspace/Mimik_Proofkit"
+      }
+    }
+  }
+}

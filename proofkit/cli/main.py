@@ -260,6 +260,76 @@ def export_pencil(
 
 
 @app.command()
+def discover_features(
+    url: str = typer.Argument(..., help="URL to analyze"),
+    output_dir: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output directory for generated tests"
+    ),
+    generate_tests: bool = typer.Option(
+        True, "--tests/--no-tests", help="Generate Playwright test files"
+    ),
+):
+    """
+    Discover interactive features on a webpage and generate tests.
+
+    This tool automatically finds all interactive elements (forms, buttons,
+    navigation, etc.) and generates Playwright test scripts for them.
+
+    Example:
+        proofkit discover-features https://example.com
+        proofkit discover-features https://example.com --output ./qa_tests
+    """
+    import asyncio
+    from proofkit.intelligent_qa.feature_discovery import FeatureDiscovery, discover_features as discover
+    from proofkit.intelligent_qa.test_generator import TestGenerator
+
+    console.print(f"[cyan]Discovering features on {url}...[/cyan]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Scanning page...", total=None)
+
+        try:
+            features = asyncio.run(discover(url))
+        except Exception as e:
+            console.print(f"[red]Discovery failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    console.print(f"[green]Found {len(features)} interactive features[/green]")
+    console.print()
+
+    # Display summary by type
+    by_type = {}
+    for f in features:
+        type_key = f.type.value
+        by_type[type_key] = by_type.get(type_key, 0) + 1
+
+    console.print("[bold]Features by type:[/bold]")
+    for ftype, count in sorted(by_type.items(), key=lambda x: -x[1]):
+        console.print(f"  {ftype}: {count}")
+
+    # Generate tests if requested
+    if generate_tests:
+        console.print()
+        generator = TestGenerator(features, url)
+        output = output_dir or Path("./qa_tests")
+
+        files = generator.save_tests(output)
+
+        console.print(f"[green]Test files generated![/green]")
+        console.print(f"[dim]Tests:[/dim] {files['tests']}")
+        console.print(f"[dim]Config:[/dim] {files['conftest']}")
+        console.print(f"[dim]Summary:[/dim] {files['summary']}")
+        console.print()
+        console.print("[cyan]To run tests:[/cyan]")
+        console.print(f"  cd {output}")
+        console.print(f"  pytest test_generated_qa.py -v")
+
+
+@app.command()
 def api_key(
     action: str = typer.Argument(
         "show",
@@ -300,6 +370,226 @@ def api_key(
             break
 
     asyncio.run(manage_key())
+
+
+@app.command()
+def check_lighthouse():
+    """
+    Check Lighthouse requirements and show setup instructions.
+
+    Example:
+        proofkit check-lighthouse
+    """
+    from proofkit.collector.lighthouse import LighthouseCollector
+
+    console.print("[cyan]Checking Lighthouse Requirements...[/cyan]")
+    console.print()
+
+    collector = LighthouseCollector()
+    status = collector.check_requirements()
+
+    # Lighthouse CLI
+    if status["lighthouse_cli"]:
+        console.print("[green]Lighthouse CLI:[/green] Installed")
+    else:
+        console.print("[red]Lighthouse CLI:[/red] Not installed")
+
+    # Chrome/Chromium
+    if status["chrome_available"]:
+        console.print(f"[green]Chrome/Chromium:[/green] Found at {status['chrome_path']}")
+    else:
+        console.print("[red]Chrome/Chromium:[/red] Not found")
+
+    console.print()
+
+    if status["ready"]:
+        console.print("[green]Lighthouse is ready to use![/green]")
+    else:
+        console.print("[yellow]Setup Required:[/yellow]")
+        console.print()
+        console.print(status["setup_instructions"])
+
+
+@app.command()
+def models():
+    """
+    List available AI models and their capabilities.
+
+    Example:
+        proofkit models
+    """
+    from proofkit.narrator.ai_client import list_available_models, TASK_MODEL_MAPPING, ModelTier
+    import os
+
+    console.print("[cyan]Available AI Models[/cyan]")
+    console.print()
+
+    all_models = list_available_models()
+
+    # OpenAI Models
+    console.print("[bold]OpenAI Models:[/bold]")
+    for model, desc in all_models["openai"].items():
+        console.print(f"  [green]{model}[/green]")
+        console.print(f"    {desc}")
+    console.print()
+
+    # Anthropic Models
+    console.print("[bold]Anthropic Models:[/bold]")
+    for model, desc in all_models["anthropic"].items():
+        console.print(f"  [green]{model}[/green]")
+        console.print(f"    {desc}")
+    console.print()
+
+    # Task-based model selection
+    console.print("[bold]Automatic Model Selection by Task:[/bold]")
+    for task, tier in TASK_MODEL_MAPPING.items():
+        console.print(f"  {task}: {tier.value}")
+    console.print()
+
+    # Current configuration
+    provider = os.getenv("AI_PROVIDER", "anthropic")
+    model = os.getenv("OPENAI_MODEL" if provider == "openai" else "ANTHROPIC_MODEL", "default")
+    console.print(f"[bold]Current Config:[/bold]")
+    console.print(f"  Provider: {provider}")
+    console.print(f"  Default Model: {model}")
+    console.print()
+
+    console.print("[dim]To change model, edit OPENAI_MODEL or ANTHROPIC_MODEL in .env[/dim]")
+
+
+@app.command()
+def test_ai():
+    """
+    Test AI connection and show configuration.
+
+    Example:
+        proofkit test-ai
+    """
+    import os
+    from proofkit.narrator.ai_client import get_ai_client, AIClientFactory
+
+    console.print("[cyan]Testing AI Connection...[/cyan]")
+    console.print()
+
+    # Show current config
+    provider = os.getenv("AI_PROVIDER", "anthropic")
+    console.print(f"[dim]AI Provider:[/dim] {provider}")
+
+    if provider == "openai":
+        key = os.getenv("OPENAI_API_KEY", "")
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        console.print(f"[dim]Model:[/dim] {model}")
+        console.print(f"[dim]API Key:[/dim] {'*' * 20}...{key[-8:] if len(key) > 8 else 'NOT SET'}")
+    else:
+        key = os.getenv("ANTHROPIC_API_KEY", "")
+        model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        console.print(f"[dim]Model:[/dim] {model}")
+        console.print(f"[dim]API Key:[/dim] {'*' * 20}...{key[-8:] if len(key) > 8 else 'NOT SET'}")
+
+    console.print()
+
+    try:
+        # Reset factory to pick up new env vars
+        AIClientFactory.reset()
+        client = get_ai_client()
+
+        console.print("[cyan]Sending test request...[/cyan]")
+
+        response = client.generate(
+            system_prompt="You are a helpful assistant. Respond in exactly one sentence.",
+            user_prompt="Say 'ProofKit AI is working!' and nothing else.",
+            max_tokens=50,
+        )
+
+        console.print(f"[green]Response:[/green] {response}")
+
+        usage = client.get_last_usage()
+        console.print(f"[dim]Tokens used:[/dim] {usage.get('input_tokens', 0)} in, {usage.get('output_tokens', 0)} out")
+        console.print()
+        console.print("[green]AI connection successful![/green]")
+
+    except Exception as e:
+        console.print(f"[red]AI connection failed: {e}[/red]")
+        console.print()
+        console.print("[yellow]Troubleshooting:[/yellow]")
+        console.print("1. Check your .env file has the correct API key")
+        console.print("2. Verify AI_PROVIDER is set to 'openai' or 'anthropic'")
+        console.print("3. Make sure the API key is valid")
+        raise typer.Exit(1)
+
+
+@app.command()
+def analyze_codebase(
+    path: Path = typer.Argument(..., help="Path to codebase directory"),
+    output_dir: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output directory for analysis"
+    ),
+    include: Optional[str] = typer.Option(
+        None, "--include", "-i", help="File patterns to include (e.g., '*.py,*.ts')"
+    ),
+    exclude: Optional[str] = typer.Option(
+        None, "--exclude", "-e", help="Patterns to exclude (e.g., 'node_modules,__pycache__')"
+    ),
+    generate_tests: bool = typer.Option(
+        False, "--tests", "-t", help="Generate test scripts for discovered components"
+    ),
+):
+    """
+    Analyze a codebase and generate QA documentation.
+
+    This command scans a codebase to understand its structure, identify
+    components, and optionally generate test scripts.
+
+    Example:
+        proofkit analyze-codebase ./my-project
+        proofkit analyze-codebase ./my-project --include "*.py" --tests
+    """
+    from proofkit.codebase_qa.analyzer import CodebaseAnalyzer
+
+    if not path.exists():
+        console.print(f"[red]Path not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Analyzing codebase at {path}...[/cyan]")
+
+    include_patterns = include.split(",") if include else None
+    exclude_patterns = exclude.split(",") if exclude else None
+
+    try:
+        analyzer = CodebaseAnalyzer(
+            path,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[cyan]Scanning files...", total=None)
+            result = analyzer.analyze()
+
+        console.print()
+        console.print(f"[green]Analysis complete![/green]")
+        console.print(f"[dim]Files analyzed:[/dim] {result.file_count}")
+        console.print(f"[dim]Components found:[/dim] {result.component_count}")
+        console.print(f"[dim]Functions found:[/dim] {result.function_count}")
+
+        # Save output
+        output = output_dir or (path / "proofkit_analysis")
+        result.save(output)
+        console.print(f"[dim]Output saved to:[/dim] {output}")
+
+        if generate_tests:
+            console.print()
+            console.print("[cyan]Generating test scripts...[/cyan]")
+            test_result = analyzer.generate_tests(output / "tests")
+            console.print(f"[green]Tests generated:[/green] {test_result['test_count']} test cases")
+
+    except Exception as e:
+        console.print(f"[red]Analysis failed: {e}[/red]")
+        raise typer.Exit(1)
 
 
 def main():

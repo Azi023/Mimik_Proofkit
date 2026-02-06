@@ -45,12 +45,82 @@ class LighthouseCollector:
 
     def __init__(self):
         self._lighthouse_available = None
+        self._chrome_path = None
 
     def is_available(self) -> bool:
         """Check if Lighthouse CLI is available."""
         if self._lighthouse_available is None:
             self._lighthouse_available = shutil.which("lighthouse") is not None
         return self._lighthouse_available
+
+    def _find_chrome(self) -> Optional[str]:
+        """Find Chrome/Chromium executable."""
+        if self._chrome_path:
+            return self._chrome_path
+
+        # Common Chrome/Chromium paths
+        chrome_paths = [
+            shutil.which("google-chrome"),
+            shutil.which("google-chrome-stable"),
+            shutil.which("chromium"),
+            shutil.which("chromium-browser"),
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ]
+
+        # Try to find Playwright's bundled Chromium
+        try:
+            from playwright._impl._driver import compute_driver_executable
+            pw_dir = Path(compute_driver_executable()).parent.parent
+            pw_chrome = pw_dir / "chromium-" / "chrome-linux" / "chrome"
+            if pw_chrome.exists():
+                chrome_paths.append(str(pw_chrome))
+        except Exception:
+            pass
+
+        for path in chrome_paths:
+            if path and Path(path).exists():
+                self._chrome_path = path
+                return path
+
+        return None
+
+    def check_requirements(self) -> Dict[str, Any]:
+        """Check if all requirements for Lighthouse are met."""
+        lighthouse_installed = self.is_available()
+        chrome_path = self._find_chrome()
+
+        return {
+            "lighthouse_cli": lighthouse_installed,
+            "chrome_available": chrome_path is not None,
+            "chrome_path": chrome_path,
+            "ready": lighthouse_installed and chrome_path is not None,
+            "setup_instructions": self._get_setup_instructions(lighthouse_installed, chrome_path),
+        }
+
+    def _get_setup_instructions(self, lighthouse_ok: bool, chrome_path: Optional[str]) -> str:
+        """Get setup instructions for missing requirements."""
+        instructions = []
+
+        if not lighthouse_ok:
+            instructions.append(
+                "Install Lighthouse CLI:\n"
+                "  npm install -g lighthouse"
+            )
+
+        if not chrome_path:
+            instructions.append(
+                "Install Chrome/Chromium:\n"
+                "  # Ubuntu/Debian:\n"
+                "  sudo apt-get install chromium-browser\n"
+                "  # Or install Google Chrome:\n"
+                "  wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb\n"
+                "  sudo dpkg -i google-chrome-stable_current_amd64.deb"
+            )
+
+        return "\n\n".join(instructions) if instructions else "All requirements met!"
 
     def collect(self, url: str, output_dir: Path) -> LighthouseData:
         """
@@ -107,15 +177,22 @@ class LighthouseCollector:
         """
         output_path = output_dir / f"lighthouse_{mode}.json"
 
+        # Find Chrome path
+        chrome_path = self._find_chrome()
+
         cmd = [
             "lighthouse",
             url,
             "--output=json",
             f"--output-path={output_path}",
-            "--chrome-flags=--headless --no-sandbox --disable-gpu",
+            "--chrome-flags=--headless --no-sandbox --disable-gpu --disable-dev-shm-usage",
             "--quiet",
             "--only-categories=performance,accessibility,best-practices,seo",
         ]
+
+        # Add Chrome path if found
+        if chrome_path:
+            cmd.append(f"--chrome-path={chrome_path}")
 
         if mode == "desktop":
             cmd.append("--preset=desktop")

@@ -13,6 +13,13 @@ from proofkit.utils.logger import logger
 from proofkit.utils.paths import setup_run_directories
 from proofkit import __version__
 
+# Import actual collector, analyzer, and narrator modules
+from proofkit.collector import Collector, RawData
+from proofkit.analyzer.engine import RuleEngine
+from proofkit.narrator import Narrator
+from proofkit.report_builder.pencil_export import generate_pencil_report
+from proofkit.report_builder.figma_export import generate_figma_export
+
 
 class AuditRunner:
     """
@@ -99,35 +106,40 @@ class AuditRunner:
 
         return result
 
-    def _run_collectors(self) -> dict:
+    def _run_collectors(self) -> RawData:
         """
         Run all collectors and return raw data.
 
         Returns:
-            Dict containing raw data from all collectors
+            RawData object containing all collected information
         """
-        # TODO: Implement when collector module is ready
-        # For now, return empty structure
-        logger.warning("Collector module not yet implemented, using stub data")
-        return {
-            "playwright": {},
-            "lighthouse": {},
-            "http_probe": {},
-        }
+        collector = Collector()
+        raw_data = collector.collect(
+            url=str(self.config.url),
+            mode=self.config.mode,
+            output_dir=self.output_dir / "raw",
+        )
+        return raw_data
 
-    def _run_analyzer(self, raw_data: dict) -> List[Finding]:
+    def _run_analyzer(self, raw_data: RawData) -> List[Finding]:
         """
         Run analyzer on raw data.
 
         Args:
-            raw_data: Raw data from collectors
+            raw_data: RawData from collectors
 
         Returns:
             List of findings
         """
-        # TODO: Implement when analyzer module is ready
-        logger.warning("Analyzer module not yet implemented, returning empty findings")
-        return []
+        engine = RuleEngine()
+        findings, scores = engine.analyze(
+            raw_data=raw_data,
+            business_type=self.config.business_type,
+            auto_detect=True,
+        )
+        # Store scores for later use
+        self._analyzer_scores = scores
+        return findings
 
     def _run_narrator(self, findings: List[Finding]) -> ReportNarrative:
         """
@@ -139,13 +151,22 @@ class AuditRunner:
         Returns:
             ReportNarrative with AI-generated content
         """
-        # TODO: Implement when narrator module is ready
-        logger.warning("Narrator module not yet implemented, returning empty narrative")
-        return ReportNarrative()
+        try:
+            narrator = Narrator()
+            narrative = narrator.generate(
+                findings=findings,
+                business_type=self.config.business_type,
+                conversion_goal=self.config.conversion_goal,
+                generate_concept=self.config.generate_concept,
+            )
+            return narrative
+        except Exception as e:
+            logger.warning(f"Narrator failed (AI may not be configured): {e}")
+            return ReportNarrative()
 
     def _build_report(
         self,
-        raw_data: dict,
+        raw_data: RawData,
         findings: List[Finding],
         narrative: ReportNarrative,
     ) -> Report:
@@ -153,13 +174,16 @@ class AuditRunner:
         Assemble final report from all components.
 
         Args:
-            raw_data: Raw data from collectors
+            raw_data: RawData from collectors
             findings: List of findings
             narrative: AI-generated narrative
 
         Returns:
             Complete Report object
         """
+        # Get pages analyzed count from raw data
+        pages_analyzed = len(raw_data.pages_audited) if raw_data.pages_audited else 1
+
         meta = ReportMeta(
             audit_id=self.run_id,
             url=str(self.config.url),
@@ -168,12 +192,16 @@ class AuditRunner:
             generated_at=datetime.utcnow(),
             proofkit_version=__version__,
             mode=self.config.mode.value if hasattr(self.config.mode, 'value') else str(self.config.mode),
-            pages_analyzed=1,  # TODO: Get from collector
+            pages_analyzed=pages_analyzed,
         )
 
-        # Calculate scores
-        scorecard = self._calculate_scorecard(findings)
-        overall_score = self._calculate_overall_score(scorecard)
+        # Use scores from analyzer if available, otherwise calculate
+        if hasattr(self, '_analyzer_scores') and self._analyzer_scores:
+            scorecard = {k: v for k, v in self._analyzer_scores.items() if k != 'OVERALL'}
+            overall_score = self._analyzer_scores.get('OVERALL', self._calculate_overall_score(scorecard))
+        else:
+            scorecard = self._calculate_scorecard(findings)
+            overall_score = self._calculate_overall_score(scorecard)
 
         return Report(
             meta=meta,
@@ -182,8 +210,9 @@ class AuditRunner:
             findings=findings,
             narrative=narrative,
             raw_data_paths={
-                "playwright": str(self.output_dir / "raw" / "playwright.json"),
-                "lighthouse": str(self.output_dir / "raw" / "lighthouse.json"),
+                "raw_data": str(self.output_dir / "raw" / "raw_data.json"),
+                "snapshot": str(self.output_dir / "raw" / "snapshot.json"),
+                "lighthouse": str(self.output_dir / "raw" / "lighthouse_summary.json"),
                 "http_probe": str(self.output_dir / "raw" / "http_probe.json"),
             },
         )
@@ -283,3 +312,19 @@ class AuditRunner:
                 if report.narrative.lovable_concept:
                     f.write("## Lovable Redesign Concept\n\n")
                     f.write(f"```\n{report.narrative.lovable_concept}\n```\n")
+
+        # Auto-generate Pencil report prompts
+        try:
+            pencil_dir = self.output_dir / "pencil"
+            pencil_result = generate_pencil_report(report, pencil_dir)
+            logger.info(f"Pencil prompts saved to {pencil_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to generate Pencil prompts: {e}")
+
+        # Auto-generate Figma export
+        try:
+            figma_dir = self.output_dir / "figma"
+            figma_result = generate_figma_export(report, figma_dir)
+            logger.info(f"Figma export saved to {figma_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to generate Figma export: {e}")

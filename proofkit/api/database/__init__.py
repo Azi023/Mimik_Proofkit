@@ -81,6 +81,9 @@ async def _ensure_default_user():
                 api_key=api_key,
             )
             logger.info(f"Created default user with API key: {api_key}")
+        else:
+            # Log existing API key for convenience
+            logger.info(f"Using existing API key: {user.api_key}")
         break
 
 

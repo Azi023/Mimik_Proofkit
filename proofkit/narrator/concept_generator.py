@@ -46,7 +46,8 @@ Focus on modern, conversion-optimized design patterns that address the audit fin
 
         industry = "business"
         if business_type:
-            industry = business_type.value.replace("_", " ")
+            bt_value = business_type.value if hasattr(business_type, 'value') else str(business_type)
+            industry = bt_value.replace("_", " ")
 
         user_prompt = f"""
 Based on these audit findings, suggest 4-6 concept improvements:
@@ -102,7 +103,8 @@ Create detailed, specific prompts that result in professional, modern websites."
 
         industry = "business"
         if business_type:
-            industry = business_type.value.replace("_", " ")
+            bt_value = business_type.value if hasattr(business_type, 'value') else str(business_type)
+            industry = bt_value.replace("_", " ")
 
         # Get industry-specific design guidance
         design_guidance = self._get_design_guidance(business_type)
