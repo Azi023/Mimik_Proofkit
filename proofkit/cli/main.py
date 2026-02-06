@@ -715,6 +715,129 @@ def deduplicate(
     console.print(f"[green]Reduced {len(findings)} raw findings to {len(deduplicated)} unique findings![/green]")
 
 
+@app.command()
+def experience_test(
+    url: str = typer.Argument(..., help="URL to test"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output JSON file for results"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed metrics"
+    ),
+):
+    """
+    Run Experience Agent to detect human-like UX friction.
+
+    This simulates a human user experiencing the website and detects
+    issues that automated scans miss, such as:
+    - Laggy custom cursors
+    - Layout shifts (CLS)
+    - Slow-loading hero images
+    - Scroll jank
+    - Confusing navigation
+    - Form friction
+
+    Example:
+        proofkit experience-test https://www.seventides.com
+        proofkit experience-test https://example.com -o results.json -v
+    """
+    import asyncio
+    import json
+    from proofkit.agents.experience_agent import run_experience_test
+
+    console.print(f"[cyan]Running Experience Agent on {url}...[/cyan]")
+    console.print("[dim]This simulates a human user to detect UX friction[/dim]")
+    console.print()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("[cyan]Experiencing page...", total=None)
+
+        try:
+            result = asyncio.run(run_experience_test(url))
+        except Exception as e:
+            console.print(f"[red]Experience test failed: {e}[/red]")
+            raise typer.Exit(1)
+
+    # Display results
+    frictions = result.get('frictions', [])
+    summary = result.get('summary', {})
+
+    console.print(f"[green]Experience test complete![/green]")
+    console.print()
+
+    if not frictions:
+        console.print("[green]No significant UX friction detected.[/green]")
+    else:
+        console.print(f"[bold]Found {len(frictions)} UX Friction Points:[/bold]")
+        console.print()
+
+        # Group by severity
+        by_severity = summary.get('by_severity', {})
+        if by_severity.get('critical', 0) > 0:
+            console.print(f"  [red]Critical: {by_severity['critical']}[/red]")
+        if by_severity.get('high', 0) > 0:
+            console.print(f"  [yellow]High: {by_severity['high']}[/yellow]")
+        if by_severity.get('medium', 0) > 0:
+            console.print(f"  [blue]Medium: {by_severity['medium']}[/blue]")
+        if by_severity.get('low', 0) > 0:
+            console.print(f"  [dim]Low: {by_severity['low']}[/dim]")
+
+        console.print()
+
+        # Display each friction
+        for i, friction in enumerate(frictions, 1):
+            sev = friction['severity']
+            if sev == 'critical':
+                sev_color = 'red'
+            elif sev == 'high':
+                sev_color = 'yellow'
+            elif sev == 'medium':
+                sev_color = 'blue'
+            else:
+                sev_color = 'dim'
+
+            console.print(f"[bold]{i}. [{sev_color}]{sev.upper()}[/{sev_color}] {friction['type']}[/bold]")
+            console.print(f"   [dim]Location:[/dim] {friction['location']}")
+            console.print(f"   {friction['description'][:200]}...")
+            console.print(f"   [cyan]Recommendation:[/cyan] {friction['recommendation'][:150]}...")
+            console.print()
+
+    # Show metrics if verbose
+    if verbose:
+        metrics = result.get('metrics', {})
+        console.print("[bold]Detailed Metrics:[/bold]")
+        console.print()
+
+        if metrics.get('cursor'):
+            cursor = metrics['cursor']
+            console.print("[dim]Cursor Analysis:[/dim]")
+            console.print(f"  Custom cursor elements: {cursor.get('cursorElementCount', 0)}")
+            console.print(f"  Has GSAP: {cursor.get('hasGSAP', False)}")
+
+        if metrics.get('cls'):
+            cls = metrics['cls']
+            console.print(f"[dim]Layout Shift (CLS):[/dim] {cls.get('score', 0):.3f}")
+
+        if metrics.get('scroll'):
+            scroll = metrics['scroll']
+            console.print(f"[dim]Scroll Jank Events:[/dim] {scroll.get('jankCount', 0)}")
+
+        if metrics.get('navigation'):
+            nav = metrics['navigation']
+            console.print(f"[dim]Navigation Items:[/dim] {nav.get('topLevelItems', 0)}")
+
+    # Save output if requested
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2))
+        console.print()
+        console.print(f"[green]Results saved to {output}[/green]")
+
+
 def main():
     """Entry point for the CLI."""
     app()
