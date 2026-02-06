@@ -592,6 +592,129 @@ def analyze_codebase(
         raise typer.Exit(1)
 
 
+@app.command()
+def deduplicate(
+    run_dir: Path = typer.Option(
+        ..., "--run-dir", "-r", help="Path to run directory with findings"
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file for deduplicated findings"
+    ),
+    top_n: int = typer.Option(
+        50, "--top", "-n", help="Number of top findings to show by business impact"
+    ),
+    business_type: Optional[str] = typer.Option(
+        None, "--business-type", "-b", help="Business type for impact scoring"
+    ),
+):
+    """
+    Deduplicate findings from an existing audit run.
+
+    This command reads the raw findings from an audit run, removes duplicates,
+    and scores them by business impact. Useful for reducing 400+ findings
+    down to 50-80 actionable items.
+
+    Example:
+        proofkit deduplicate --run-dir ./runs/run_20260206_123456
+        proofkit deduplicate -r ./runs/run_20260206_123456 --top 30 -b real_estate
+    """
+    import json
+    from proofkit.analyzer.deduplication import deduplicate_with_stats
+    from proofkit.analyzer.impact_scorer import score_by_business_impact
+    from proofkit.schemas.finding import Finding
+
+    # Find findings file
+    findings_path = run_dir / "out" / "findings.json"
+    if not findings_path.exists():
+        findings_path = run_dir / "findings.json"
+
+    if not findings_path.exists():
+        console.print(f"[red]Findings not found at {findings_path}[/red]")
+        console.print("[dim]Make sure to run a complete audit first.[/dim]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Loading findings from {findings_path}...[/cyan]")
+
+    try:
+        findings_data = json.loads(findings_path.read_text())
+        findings = [Finding(**f) for f in findings_data]
+    except Exception as e:
+        console.print(f"[red]Failed to load findings: {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]Loaded {len(findings)} raw findings[/dim]")
+    console.print()
+
+    # Deduplicate
+    console.print("[cyan]Deduplicating findings...[/cyan]")
+    deduplicated, stats = deduplicate_with_stats(findings)
+
+    console.print(f"[green]Deduplication complete![/green]")
+    console.print(f"  Original: {stats['original_count']} findings")
+    console.print(f"  After rule ID dedup: {stats['after_rule_id_dedup']} findings")
+    console.print(f"  After similarity dedup: {stats['after_similarity_dedup']} findings")
+    console.print(f"  Duplicates merged: {stats['duplicates_merged']}")
+    console.print()
+
+    # Score by business impact
+    console.print("[cyan]Scoring by business impact...[/cyan]")
+    scored = score_by_business_impact(deduplicated, business_type)
+
+    console.print()
+    console.print(f"[bold]Top {min(top_n, len(scored))} Findings by Business Impact:[/bold]")
+    console.print()
+
+    for i, sf in enumerate(scored[:top_n], 1):
+        severity = sf.finding.severity
+        sev_val = severity.value if hasattr(severity, 'value') else severity
+
+        # Color code by impact score
+        if sf.impact_score >= 80:
+            score_color = "red"
+        elif sf.impact_score >= 60:
+            score_color = "yellow"
+        else:
+            score_color = "green"
+
+        console.print(f"[bold]{i:2d}.[/bold] [{score_color}]{sf.impact_score:.0f}[/{score_color}] "
+                      f"[{sev_val}] {sf.finding.title[:60]}")
+        console.print(f"     [dim]{sf.impact_category.value}: {sf.revenue_impact}[/dim]")
+
+    # Save output if requested
+    if output:
+        output_data = {
+            "stats": stats,
+            "findings": [
+                {
+                    "rank": sf.priority_rank,
+                    "impact_score": sf.impact_score,
+                    "impact_category": sf.impact_category.value,
+                    "revenue_impact": sf.revenue_impact,
+                    **sf.finding.model_dump(),
+                }
+                for sf in scored
+            ]
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(output_data, indent=2))
+        console.print()
+        console.print(f"[green]Saved to {output}[/green]")
+
+    # Summary by category
+    console.print()
+    console.print("[bold]Summary by Impact Category:[/bold]")
+    by_category = {}
+    for sf in scored:
+        cat = sf.impact_category.value
+        by_category[cat] = by_category.get(cat, 0) + 1
+
+    for cat, count in sorted(by_category.items(), key=lambda x: -x[1]):
+        console.print(f"  {cat}: {count}")
+
+    console.print()
+    console.print(f"[green]Reduced {len(findings)} raw findings to {len(deduplicated)} unique findings![/green]")
+
+
 def main():
     """Entry point for the CLI."""
     app()
